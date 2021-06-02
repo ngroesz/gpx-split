@@ -1,25 +1,19 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 from haversine import haversine, Unit
 from lxml import etree
 import argparse
 import copy
 import logging
-import math
 import os
 import sys
 
 DEFAULT_NAMESPACE = 'http://www.topografix.com/GPX/1/1'
 
+
 class GpxFile:
     def __init__(self, xml_filepath):
         self.tree = etree.parse(xml_filepath)
-
-        #self.namespaces = dict([
-        #    node for _, node in ET.iterparse(
-        #        xml_filepath , events=['start-ns']
-        #    )
-        #])
 
         self.xml_filename = os.path.basename(xml_filepath)
 
@@ -78,7 +72,10 @@ class GpxFile:
 
     def write_track_points_to_n_files(self, track_points, output_directory, max_number_of_points_per_file, max_number_of_files):
         if len(track_points) > max_number_of_points_per_file * max_number_of_files:
-            logging.error("Directed to write {} points to {} files, with {} points-per-file. This is impossible".format(len(track_points), max_number_of_files, max_number_of_points_per_file))
+            logging.error(
+                "Directed to write {} points to {} files, with {} points-per-file. This is unpossible"
+                .format(len(track_points), max_number_of_files, max_number_of_points_per_file)
+            )
 
         chunked_points = list(self.chunk_list(track_points, max_number_of_points_per_file))
 
@@ -115,6 +112,7 @@ class GpxFile:
         for i in range(0, len(array), n):
             yield array[i:i + n]
 
+
 def setup_logger():
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
@@ -140,6 +138,7 @@ def parse_args():
 
     return args
 
+
 def process_file(args):
     gpx_file = GpxFile(args.xml_file)
 
@@ -148,13 +147,19 @@ def process_file(args):
     max_points = int(args.points) * int(args.files)
     reduced_track_points = gpx_file.reduce_to_max_number_of_points(reduced_track_points, max_points)
 
-    gpx_file.write_track_points_to_n_files(reduced_track_points, output_directory=args.output_directory, max_number_of_points_per_file=args.points, max_number_of_files=args.files)
+    gpx_file.write_track_points_to_n_files(
+        reduced_track_points,
+        output_directory=args.output_directory,
+        max_number_of_points_per_file=args.points,
+        max_number_of_files=args.files
+    )
 
 
 def main():
     setup_logger()
     args = parse_args()
     process_file(args)
+
 
 if __name__ == "__main__":
     main()
