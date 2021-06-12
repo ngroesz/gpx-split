@@ -43,18 +43,13 @@ class GpxFile:
         return self.tree.find('.//{{{}}}name'.format(DEFAULT_NAMESPACE)).text or 'Unnamed'
 
     def _waypoint_root(self, index, total_count):
-        root = etree.Element('root',
+        root = etree.Element('gpx',
             version="1.1",
-            xmlns="http://www.topografix.com/GPX/1/1"
+            xmlns=DEFAULT_NAMESPACE,
+            creator='GPX Split'
         )
 
         metadata = etree.SubElement(root, 'metadata')
-
-        if self.route_name:
-            name_element = etree.Element('name')
-            name_element.text = '{} - {}/{}'.format(self.route_name, index, total_count)
-            metadata.append(name_element)
-
         if self.route_bounds:
             metadata.append(etree.Element('bounds',
                                         minlat=self.route_bounds['minlat'],
@@ -63,6 +58,15 @@ class GpxFile:
                                         maxlon=self.route_bounds['maxlon'],
                                     )
                             )
+
+        route = etree.Element('rte')
+        if self.route_name:
+            name_element = etree.Element('name')
+            name_element.text = '{} - {}/{}'.format(self.route_name, index, total_count)
+            route.append(name_element)
+        root.append(route)
+
+        print(etree.tostring(root))
         return root
 
     def _reduce_close_trackpoints(self):
@@ -136,10 +140,12 @@ class GpxFile:
             logging.info("Writing {}/{} files".format(count, len(chunked_points)))
 
             output_tree = self._waypoint_root(count, len(chunked_points))
+            print('output tree: {}'.format(etree.tostring(output_tree)))
+            route = output_tree.find('.//rte'.format(DEFAULT_NAMESPACE))
+            print('found: {}'.format(route))
 
             for point in chunk:
-                logging.info('point: {}'.format(point))
-                output_tree.append(point)
+                route.append(point)
 
             self._write_tree_to_file(
                 os.path.join(
@@ -151,7 +157,7 @@ class GpxFile:
 
     def _translate_trackpoints_to_waypoints(self, trackpoints):
         return list(map(
-            lambda point: etree.Element('wpt', lat=point.attrib['lat'], lon=point.attrib['lon']),
+            lambda point: etree.Element('rtept', lat=point.attrib['lat'], lon=point.attrib['lon']),
             trackpoints
         ))
 
