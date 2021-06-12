@@ -42,7 +42,7 @@ class GpxFile:
     def _route_name(self):
         return self.tree.find('.//{{{}}}name'.format(DEFAULT_NAMESPACE)).text or 'Unnamed'
 
-    def _waypoint_root(self, index, total_count):
+    def _waypoint_root(self, route_name, index, total_count, route_bounds):
         root = etree.Element('gpx',
             version="1.1",
             xmlns=DEFAULT_NAMESPACE,
@@ -50,23 +50,22 @@ class GpxFile:
         )
 
         metadata = etree.SubElement(root, 'metadata')
-        if self.route_bounds:
-            metadata.append(etree.Element('bounds',
-                                        minlat=self.route_bounds['minlat'],
-                                        minlon=self.route_bounds['minlon'],
-                                        maxlat=self.route_bounds['maxlat'],
-                                        maxlon=self.route_bounds['maxlon'],
+        if route_bounds:
+           metadata.append(etree.Element('bounds',
+                                        minlat=route_bounds['minlat'],
+                                        minlon=route_bounds['minlon'],
+                                        maxlat=route_bounds['maxlat'],
+                                        maxlon=route_bounds['maxlon'],
                                     )
                             )
 
         route = etree.Element('rte')
-        if self.route_name:
+        if route_name:
             name_element = etree.Element('name')
-            name_element.text = '{} - {}/{}'.format(self.route_name, index, total_count)
+            name_element.text = '{}/{} - {}'.format(index, total_count, route_name)
             route.append(name_element)
         root.append(route)
 
-        print(etree.tostring(root))
         return root
 
     def _reduce_close_trackpoints(self):
@@ -127,22 +126,20 @@ class GpxFile:
                 .format(len(waypoints), max_number_of_output_files, max_number_of_points_per_file)
             )
 
-        self.route_bounds = self._bounds_from_waypoints(waypoints)
-        self.route_name = self._route_name()
-
+        route_name = self._route_name()
         chunked_points = list(self._chunk_list(waypoints, max_number_of_points_per_file))
-
-        logging.info("Writing {} files".format(len(chunked_points)))
-
         file_basename, file_extension = os.path.splitext(self.xml_filename)
 
         for count, chunk in enumerate(chunked_points, start=1):
             logging.info("Writing {}/{} files".format(count, len(chunked_points)))
 
-            output_tree = self._waypoint_root(count, len(chunked_points))
-            print('output tree: {}'.format(etree.tostring(output_tree)))
+            output_tree = self._waypoint_root(
+                route_name=route_name,
+                index=count,
+                total_count=len(chunked_points),
+                route_bounds=self._bounds_from_waypoints(chunk)
+            )
             route = output_tree.find('.//rte'.format(DEFAULT_NAMESPACE))
-            print('found: {}'.format(route))
 
             for point in chunk:
                 route.append(point)
