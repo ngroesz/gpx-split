@@ -3,7 +3,6 @@
 from haversine import haversine, Unit
 from lxml import etree
 import argparse
-import copy
 import logging
 import os
 import sys
@@ -13,8 +12,6 @@ DEFAULT_NAMESPACE = 'http://www.topografix.com/GPX/1/1'
 
 class GpxFile:
     def __init__(self, xml_filepath, min_distance, max_points_per_file, output_directory, output_file_count):
-        self.tree = etree.parse(xml_filepath)
-
         self.xml_filepath        = xml_filepath
         self.min_distance        = min_distance
         self.max_points_per_file = max_points_per_file
@@ -26,6 +23,8 @@ class GpxFile:
         self._setup_logger()
 
     def process_file(self):
+        self.tree = etree.parse(self.xml_filepath)
+
         reduced_trackpoints = self._reduce_close_trackpoints()
 
         max_points = int(self.max_points_per_file) * int(self.output_file_count)
@@ -40,17 +39,30 @@ class GpxFile:
             max_number_of_output_files=self.output_file_count
         )
 
-    def _waypoint_root(self):
+    def _route_name(self):
+        return self.tree.find('.//{{{}}}name'.format(DEFAULT_NAMESPACE)).text or 'Unnamed'
+
+    def _waypoint_root(self, index, total_count):
         root = etree.Element('root',
             version="1.1",
             xmlns="http://www.topografix.com/GPX/1/1"
         )
 
         metadata = etree.SubElement(root, 'metadata')
-        name = etree.Element('name')
-        name.text = 'some name'
-        metadata.append(name)
 
+        if self.route_name:
+            name_element = etree.Element('name')
+            name_element.text = '{} - {}/{}'.format(self.route_name, index, total_count)
+            metadata.append(name_element)
+
+        if self.route_bounds:
+            metadata.append(etree.Element('bounds',
+                                        minlat=self.route_bounds['minlat'],
+                                        minlon=self.route_bounds['minlon'],
+                                        maxlat=self.route_bounds['maxlat'],
+                                        maxlon=self.route_bounds['maxlon'],
+                                    )
+                            )
         return root
 
     def _reduce_close_trackpoints(self):
@@ -91,6 +103,19 @@ class GpxFile:
         logging.info("reduced to {} points".format(len(reduced_trackpoints)))
         return reduced_trackpoints
 
+    def _bounds_from_waypoints(self, waypoints):
+        minlat, minlon, maxlat, maxlon = None, None, None, None
+        for waypoint in waypoints:
+            if minlat is None or float(waypoint.attrib['lat']) < minlat:
+                minlat = float(waypoint.attrib['lat'])
+            if maxlat is None or float(waypoint.attrib['lat']) > maxlat:
+                maxlat = float(waypoint.attrib['lat'])
+            if minlon is None or float(waypoint.attrib['lon']) < minlon:
+                minlon = float(waypoint.attrib['lon'])
+            if maxlon is None or float(waypoint.attrib['lon']) > maxlon:
+                maxlon = float(waypoint.attrib['lon'])
+        return {'minlat': str(minlat), 'minlon': str(minlon), 'maxlat': str(maxlat), 'maxlon': str(maxlon)}
+
     def _write_waypoints_to_n_files(self, waypoints, output_directory, max_number_of_points_per_file, max_number_of_output_files):
         if len(waypoints) > max_number_of_points_per_file * max_number_of_output_files:
             logging.error(
@@ -98,7 +123,8 @@ class GpxFile:
                 .format(len(waypoints), max_number_of_output_files, max_number_of_points_per_file)
             )
 
-        waypoint_tree = self._waypoint_root()
+        self.route_bounds = self._bounds_from_waypoints(waypoints)
+        self.route_name = self._route_name()
 
         chunked_points = list(self._chunk_list(waypoints, max_number_of_points_per_file))
 
@@ -109,17 +135,17 @@ class GpxFile:
         for count, chunk in enumerate(chunked_points, start=1):
             logging.info("Writing {}/{} files".format(count, len(chunked_points)))
 
-            output_tree = copy.deepcopy(waypoint_tree)
+            output_tree = self._waypoint_root(count, len(chunked_points))
 
             for point in chunk:
                 logging.info('point: {}'.format(point))
                 output_tree.append(point)
 
             self._write_tree_to_file(
-                '{}_-_{}{}'.format(
-                    os.path.join(output_directory, file_basename),
-                    count,
-                    file_extension),
+                os.path.join(
+                    output_directory,
+                    '{}_-_{}{}'.format(count, file_basename, file_extension)
+                ),
                 output_tree
             )
 
